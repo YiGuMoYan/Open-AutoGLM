@@ -7,7 +7,7 @@
     "Zhipu AI": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model_name": "autoglm-phone",
-        "api_key": ""
+        "api_key": "935c865c5af04fca992e0d8567a6b45d.LfJCpCtCmGiwu5gM"
     },
     "ModelScope": {
         "base_url": "https://api-inference.modelscope.cn/v1",

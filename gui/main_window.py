@@ -15,6 +15,23 @@ from phone_agent.adb import list_devices
 from gui.workers import AgentWorker
 
 PROFILE_FILE = "profiles.json"
+DEFAULT_PROFILES = {
+    "Localhost": {
+        "base_url": "http://localhost:8000/v1",
+        "model_name": "autoglm-phone-9b",
+        "api_key": "EMPTY"
+    },
+    "Zhipu AI": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "model_name": "glm-4-plus",
+        "api_key": ""
+    },
+    "ModelScope": {
+        "base_url": "https://api-inference.modelscope.cn/v1/",
+        "model_name": "ZhipuAI/chatglm3-6b",
+        "api_key": ""
+    }
+}
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -70,6 +87,7 @@ class MainWindow(QMainWindow):
         # Profile Selection
         profile_layout = QHBoxLayout()
         self.profile_combo = QComboBox()
+        self.profile_combo.setEditable(True)
         self.profile_combo.currentIndexChanged.connect(self.apply_profile)
         
         self.save_profile_btn = QPushButton("Save")
@@ -160,23 +178,34 @@ class MainWindow(QMainWindow):
 
     def load_profiles(self):
         """Load profiles from JSON file."""
-        if os.path.exists(PROFILE_FILE):
+        if not os.path.exists(PROFILE_FILE):
+             self.profiles = DEFAULT_PROFILES
+             self._save_profiles_to_disk()
+        else:
             try:
                 with open(PROFILE_FILE, "r", encoding="utf-8") as f:
                     self.profiles = json.load(f)
             except Exception as e:
                 self.append_log(f"Error loading profiles: {e}", "#FF3B30")
-                self.profiles = {}
+                self.profiles = DEFAULT_PROFILES
         
         self.update_profile_combo()
 
     def update_profile_combo(self):
         self.profile_combo.blockSignals(True)
+        current_text = self.profile_combo.currentText()
         self.profile_combo.clear()
-        self.profile_combo.addItem("Custom", None)
+        # self.profile_combo.addItem("Custom", None) # No longer needed with editable combo
         
         for name in self.profiles:
             self.profile_combo.addItem(name, name)
+            
+        # Restore selection if possible, else empty
+        index = self.profile_combo.findText(current_text)
+        if index >= 0:
+            self.profile_combo.setCurrentIndex(index)
+        else:
+            self.profile_combo.setCurrentText(current_text)
             
         self.profile_combo.blockSignals(False)
 
@@ -195,34 +224,46 @@ class MainWindow(QMainWindow):
             self.api_key_input.setText(profile.get("api_key", ""))
 
     def save_current_profile(self):
-        """Save current inputs as a new profile."""
-        name, ok = QInputDialog.getText(self, "Save Profile", "Enter profile name:")
+        """Save current inputs as a profile (update existing or create new)."""
+        current_name = self.profile_combo.currentText()
+        name, ok = QInputDialog.getText(self, "Save Profile", "Enter profile name:", text=current_name)
+        
         if ok and name:
+            name = name.strip()
+            if not name:
+                QMessageBox.warning(self, "Warning", "Profile name cannot be empty.")
+                return
+
             profile = {
                 "base_url": self.base_url_input.text(),
                 "model_name": self.model_name_input.text(),
                 "api_key": self.api_key_input.text()
             }
+            
             self.profiles[name] = profile
             self._save_profiles_to_disk()
+            
+            # Update combo
             self.update_profile_combo()
             self.profile_combo.setCurrentText(name)
+            self.append_log(f"Profile '{name}' saved.", "#00FF00")
 
     def delete_current_profile(self):
         """Delete currently selected profile."""
-        profile_name = self.profile_combo.currentData()
-        if not profile_name:
-            QMessageBox.warning(self, "Warning", "Cannot delete 'Custom' profile.")
+        profile_name = self.profile_combo.currentText()
+        if not profile_name or profile_name not in self.profiles:
             return
 
         confirm = QMessageBox.question(self, "Confirm Delete", f"Delete profile '{profile_name}'?", 
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if confirm == QMessageBox.StandardButton.Yes:
-            if profile_name in self.profiles:
-                del self.profiles[profile_name]
-                self._save_profiles_to_disk()
-                self.update_profile_combo()
+            del self.profiles[profile_name]
+            self._save_profiles_to_disk()
+            self.update_profile_combo()
+            self.base_url_input.clear()
+            self.model_name_input.clear()
+            self.api_key_input.clear()
 
     def _save_profiles_to_disk(self):
         try:

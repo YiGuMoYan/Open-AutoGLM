@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 from phone_agent.config.apps import APP_PACKAGES
 from phone_agent.config.timing import TIMING_CONFIG
+from phone_agent.adb.utils import get_adb_prefix
 
 
 def get_current_app(device_id: str | None = None) -> str:
@@ -19,12 +20,16 @@ def get_current_app(device_id: str | None = None) -> str:
     Returns:
         The app name if recognized, otherwise "System Home".
     """
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     result = subprocess.run(
-        adb_prefix + ["shell", "dumpsys", "window"], capture_output=True, text=True
+        adb_prefix + ["shell", "dumpsys", "window"], 
+        capture_output=True, 
+        text=True,
+        encoding="utf-8",
+        errors="ignore"
     )
-    output = result.stdout
+    output = result.stdout or ""
 
     # Parse window focus info
     for line in output.split("\n"):
@@ -51,10 +56,13 @@ def tap(
     if delay is None:
         delay = TIMING_CONFIG.device.default_tap_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
+        adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
+        capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -74,14 +82,20 @@ def double_tap(
     if delay is None:
         delay = TIMING_CONFIG.device.default_double_tap_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
+        adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
+        capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(TIMING_CONFIG.device.double_tap_interval)
     subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
+        adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
+        capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -106,12 +120,14 @@ def long_press(
     if delay is None:
         delay = TIMING_CONFIG.device.default_long_press_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
         adb_prefix
         + ["shell", "input", "swipe", str(x), str(y), str(x), str(y), str(duration_ms)],
         capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -140,7 +156,7 @@ def swipe(
     if delay is None:
         delay = TIMING_CONFIG.device.default_swipe_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     if duration_ms is None:
         # Calculate duration based on distance
@@ -161,6 +177,8 @@ def swipe(
             str(duration_ms),
         ],
         capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -176,10 +194,13 @@ def back(device_id: str | None = None, delay: float | None = None) -> None:
     if delay is None:
         delay = TIMING_CONFIG.device.default_back_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
-        adb_prefix + ["shell", "input", "keyevent", "4"], capture_output=True
+        adb_prefix + ["shell", "input", "keyevent", "4"], 
+        capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -195,10 +216,13 @@ def home(device_id: str | None = None, delay: float | None = None) -> None:
     if delay is None:
         delay = TIMING_CONFIG.device.default_home_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
-        adb_prefix + ["shell", "input", "keyevent", "KEYCODE_HOME"], capture_output=True
+        adb_prefix + ["shell", "input", "keyevent", "KEYCODE_HOME"], 
+        capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
 
@@ -223,7 +247,7 @@ def launch_app(
     if app_name not in APP_PACKAGES:
         return False
 
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
     package = APP_PACKAGES[app_name]
 
     subprocess.run(
@@ -238,13 +262,14 @@ def launch_app(
             "1",
         ],
         capture_output=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     time.sleep(delay)
     return True
 
 
-def _get_adb_prefix(device_id: str | None) -> list:
-    """Get ADB command prefix with optional device specifier."""
-    if device_id:
-        return ["adb", "-s", device_id]
-    return ["adb"]
+    return True
+
+# Removed local _get_adb_prefix logic
+

@@ -3,6 +3,7 @@
 import base64
 import subprocess
 from typing import Optional
+from phone_agent.adb.utils import get_adb_prefix
 
 
 def type_text(text: str, device_id: str | None = None) -> None:
@@ -17,7 +18,7 @@ def type_text(text: str, device_id: str | None = None) -> None:
         Requires ADB Keyboard to be installed on the device.
         See: https://github.com/nicnocquee/AdbKeyboard
     """
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
     encoded_text = base64.b64encode(text.encode("utf-8")).decode("utf-8")
 
     subprocess.run(
@@ -34,6 +35,8 @@ def type_text(text: str, device_id: str | None = None) -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="ignore",
     )
 
 
@@ -44,12 +47,14 @@ def clear_text(device_id: str | None = None) -> None:
     Args:
         device_id: Optional ADB device ID for multi-device setups.
     """
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     subprocess.run(
         adb_prefix + ["shell", "am", "broadcast", "-a", "ADB_CLEAR_TEXT"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="ignore",
     )
 
 
@@ -63,13 +68,15 @@ def detect_and_set_adb_keyboard(device_id: str | None = None) -> str:
     Returns:
         The original keyboard IME identifier for later restoration.
     """
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     # Get current IME
     result = subprocess.run(
         adb_prefix + ["shell", "settings", "get", "secure", "default_input_method"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     current_ime = (result.stdout + result.stderr).strip()
 
@@ -79,6 +86,8 @@ def detect_and_set_adb_keyboard(device_id: str | None = None) -> str:
             adb_prefix + ["shell", "ime", "set", "com.android.adbkeyboard/.AdbIME"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="ignore",
         )
 
     # Warm up the keyboard
@@ -95,15 +104,20 @@ def restore_keyboard(ime: str, device_id: str | None = None) -> None:
         ime: The IME identifier to restore.
         device_id: Optional ADB device ID for multi-device setups.
     """
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
+
+    subprocess.run(
+        adb_prefix + ["shell", "ime", "set", ime], 
+        capture_output=True, 
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+    )
+
 
     subprocess.run(
         adb_prefix + ["shell", "ime", "set", ime], capture_output=True, text=True
     )
 
 
-def _get_adb_prefix(device_id: str | None) -> list:
-    """Get ADB command prefix with optional device specifier."""
-    if device_id:
-        return ["adb", "-s", device_id]
-    return ["adb"]
+# Removed local _get_adb_prefix logic

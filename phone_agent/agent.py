@@ -12,6 +12,13 @@ from phone_agent.config import get_messages, get_system_prompt
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.client import MessageBuilder
 
+# Event types
+EVENT_THINKING = "thinking"
+EVENT_ACTION = "action"
+EVENT_STEP_COMPLETE = "step_complete"
+EVENT_ERROR = "error"
+EVENT_FINISHED = "finished"
+
 
 @dataclass
 class AgentConfig:
@@ -67,9 +74,11 @@ class PhoneAgent:
         agent_config: AgentConfig | None = None,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
+        event_callback: Callable[[str, Any], None] | None = None,
     ):
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
+        self.event_callback = event_callback
 
         self.model_client = ModelClient(self.model_config)
         self.action_handler = ActionHandler(
@@ -171,12 +180,21 @@ class PhoneAgent:
         try:
             msgs = get_messages(self.agent_config.lang)
             print("\n" + "=" * 50)
-            print(f"💭 {msgs['thinking']}:")
             print("-" * 50)
+            
+            if self.event_callback:
+                self.event_callback(EVENT_THINKING, {"content": msgs['thinking']})
+
             response = self.model_client.request(self._context)
+            
+            if self.event_callback:
+                self.event_callback(EVENT_THINKING, {"content": response.thinking})
+                
         except Exception as e:
             if self.agent_config.verbose:
                 traceback.print_exc()
+            if self.event_callback:
+                self.event_callback(EVENT_ERROR, {"error": str(e)})
             return StepResult(
                 success=False,
                 finished=True,
@@ -199,6 +217,10 @@ class PhoneAgent:
             print(f"🎯 {msgs['action']}:")
             print(json.dumps(action, ensure_ascii=False, indent=2))
             print("=" * 50 + "\n")
+
+        if self.event_callback:
+            self.event_callback(EVENT_ACTION, {"action": action, "screenshot": screenshot.base64_data})
+
 
         # Remove image from context to save space
         self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
@@ -232,6 +254,9 @@ class PhoneAgent:
                 f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
             )
             print("=" * 50 + "\n")
+        
+        if self.event_callback and finished:
+            self.event_callback(EVENT_FINISHED, {"result": result.message or action.get('message', msgs['done'])})
 
         return StepResult(
             success=result.success,

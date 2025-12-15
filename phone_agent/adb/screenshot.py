@@ -10,6 +10,7 @@ from io import BytesIO
 from typing import Tuple
 
 from PIL import Image
+from phone_agent.adb.utils import get_adb_prefix
 
 
 @dataclass
@@ -38,7 +39,7 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
         a black fallback image is returned with is_sensitive=True.
     """
     temp_path = os.path.join(tempfile.gettempdir(), f"screenshot_{uuid.uuid4()}.png")
-    adb_prefix = _get_adb_prefix(device_id)
+    adb_prefix = get_adb_prefix(device_id)
 
     try:
         # Execute screenshot command
@@ -46,6 +47,8 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
             adb_prefix + ["shell", "screencap", "-p", "/sdcard/tmp.png"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="ignore",
             timeout=timeout,
         )
 
@@ -59,6 +62,8 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
             adb_prefix + ["pull", "/sdcard/tmp.png", temp_path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="ignore",
             timeout=5,
         )
 
@@ -85,11 +90,10 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
         return _create_fallback_screenshot(is_sensitive=False)
 
 
-def _get_adb_prefix(device_id: str | None) -> list:
-    """Get ADB command prefix with optional device specifier."""
-    if device_id:
-        return ["adb", "-s", device_id]
-    return ["adb"]
+        return _create_fallback_screenshot(is_sensitive=False)
+
+
+# Removed local _get_adb_prefix logic
 
 
 def _create_fallback_screenshot(is_sensitive: bool) -> Screenshot:

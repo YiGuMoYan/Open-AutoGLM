@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional
 
 from phone_agent.config.timing import TIMING_CONFIG
+from phone_agent.adb.utils import get_adb_path
 
 
 class ConnectionType(Enum):
@@ -44,14 +45,14 @@ class ADBConnection:
         >>> conn.disconnect("192.168.1.100:5555")
     """
 
-    def __init__(self, adb_path: str = "adb"):
+    def __init__(self, adb_path: str | None = None):
         """
         Initialize ADB connection manager.
 
         Args:
             adb_path: Path to ADB executable.
         """
-        self.adb_path = adb_path
+        self.adb_path = adb_path or get_adb_path()
 
     def connect(self, address: str, timeout: int = 10) -> tuple[bool, str]:
         """
@@ -78,6 +79,8 @@ class ADBConnection:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                encoding="utf-8",
+                errors="ignore",
             )
 
             output = result.stdout + result.stderr
@@ -130,6 +133,8 @@ class ADBConnection:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                encoding="utf-8",
+                errors="ignore",
             )
 
             devices = []
@@ -241,7 +246,9 @@ class ADBConnection:
                 cmd.extend(["-s", device_id])
             cmd.extend(["tcpip", str(port)])
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=10, encoding="utf-8", errors="ignore"
+            )
 
             output = result.stdout + result.stderr
 
@@ -270,7 +277,14 @@ class ADBConnection:
                 cmd.extend(["-s", device_id])
             cmd.extend(["shell", "ip", "route"])
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=5,
+                encoding="utf-8",
+                errors="ignore"
+            )
 
             # Parse IP from route output
             for line in result.stdout.split("\n"):
@@ -286,6 +300,8 @@ class ADBConnection:
                 cmd[:-1] + ["shell", "ip", "addr", "show", "wlan0"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="ignore",
                 timeout=5,
             )
 
@@ -311,14 +327,14 @@ class ADBConnection:
         try:
             # Kill server
             subprocess.run(
-                [self.adb_path, "kill-server"], capture_output=True, timeout=5
+                [self.adb_path, "kill-server"], capture_output=True, timeout=5, encoding="utf-8", errors="ignore"
             )
 
             time.sleep(TIMING_CONFIG.connection.server_restart_delay)
 
             # Start server
             subprocess.run(
-                [self.adb_path, "start-server"], capture_output=True, timeout=5
+                [self.adb_path, "start-server"], capture_output=True, timeout=5, encoding="utf-8", errors="ignore"
             )
 
             return True, "ADB server restarted"

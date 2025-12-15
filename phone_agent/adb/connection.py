@@ -26,6 +26,10 @@ class DeviceInfo:
     status: str
     connection_type: ConnectionType
     model: str | None = None
+    manufacturer: str | None = None
+    market_name: str | None = None
+    product: str | None = None
+    device: str | None = None
     android_version: str | None = None
 
 
@@ -157,10 +161,15 @@ class ADBConnection:
 
                     # Parse additional info
                     model = None
+                    product = None
+                    device_name = None
                     for part in parts[2:]:
                         if part.startswith("model:"):
                             model = part.split(":", 1)[1]
-                            break
+                        elif part.startswith("product:"):
+                            product = part.split(":", 1)[1]
+                        elif part.startswith("device:"):
+                            device_name = part.split(":", 1)[1]
 
                     devices.append(
                         DeviceInfo(
@@ -168,8 +177,48 @@ class ADBConnection:
                             status=status,
                             connection_type=conn_type,
                             model=model,
+                            product=product,
+                            device=device_name,
                         )
                     )
+            
+            # Enhance with getprop details for reachable devices
+            for dev in devices:
+                if dev.status == "device":
+                    try:
+                        # Fetch multiple props in one go to save time
+                        # ro.product.manufacturer: Xiaomi
+                        # ro.product.model: 2201123C (Internal model) or Xiaomi 12
+                        # ro.product.marketname: Xiaomi 12 (Not always available)
+                        # ro.build.version.release: Android Version
+                        
+                        cmd = [self.adb_path, "-s", dev.device_id, "shell", "getprop"]
+                        res = subprocess.run(
+                            cmd, 
+                            capture_output=True, 
+                            text=True, 
+                            timeout=2, 
+                            encoding="utf-8", 
+                            errors="ignore"
+                        )
+                        output = res.stdout
+                        
+                        # Simple parsing
+                        props = {}
+                        for line in output.splitlines():
+                            if ": [" in line:
+                                key, val = line.split(": [", 1)
+                                key = key.strip(" []")
+                                val = val.strip(" []")
+                                props[key] = val
+                                
+                        dev.manufacturer = props.get("ro.product.manufacturer", "")
+                        dev.model = props.get("ro.product.model", dev.model) # Prefer getprop model
+                        dev.market_name = props.get("ro.product.marketname", "")
+                        dev.android_version = props.get("ro.build.version.release", dev.android_version)
+                        
+                    except Exception as e:
+                        print(f"Failed to get details for {dev.device_id}: {e}")
 
             return devices
 

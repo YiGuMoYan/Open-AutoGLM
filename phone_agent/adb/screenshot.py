@@ -64,7 +64,7 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
             text=True,
             encoding="utf-8",
             errors="ignore",
-            timeout=5,
+            timeout=15,
         )
 
         if not os.path.exists(temp_path):

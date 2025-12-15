@@ -7,11 +7,11 @@ import base64
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox, 
                              QListWidget, QSplitter, QGroupBox, QScrollArea, QFrame,
-                             QMessageBox, QInputDialog)
+                             QMessageBox, QInputDialog, QTabWidget)
 from PyQt6.QtCore import Qt, pyqtSlot, QSize
 from PyQt6.QtGui import QPixmap, QImage, QIcon
 
-from phone_agent.adb import list_devices
+from phone_agent.adb import list_devices, quick_connect
 from gui.workers import AgentWorker
 
 PROFILE_FILE = "profiles.json"
@@ -40,9 +40,8 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         
         # Data
-        self.worker = None
-        self.current_worker = None
-        self.device_id = None
+        # Data
+        self.workers = {} # dict: device_id -> AgentWorker
         self.profiles = {}
         
         # UI Setup
@@ -64,17 +63,20 @@ class MainWindow(QMainWindow):
         dev_group = QGroupBox("Device Connection")
         dev_layout = QVBoxLayout(dev_group)
         
-        self.device_combo = QComboBox()
+        self.device_list = QListWidget()
+        self.device_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.device_list.setFixedHeight(150)
+        
         self.refresh_btn = QPushButton("Refresh Devices")
         self.refresh_btn.clicked.connect(self.refresh_devices)
         
         self.connect_input = QLineEdit()
         self.connect_input.setPlaceholderText("Remote IP:Port (e.g., 192.168.1.5:5555)")
         self.connect_btn = QPushButton("Connect Remote")
-        # TODO: Implement remote connect logic
+        self.connect_btn.clicked.connect(self.connect_remote_device)
         
-        dev_layout.addWidget(QLabel("Select Device:"))
-        dev_layout.addWidget(self.device_combo)
+        dev_layout.addWidget(QLabel("Select Devices (Check to control):"))
+        dev_layout.addWidget(self.device_list)
         dev_layout.addWidget(self.refresh_btn)
         dev_layout.addWidget(QLabel("Remote Connection:"))
         dev_layout.addWidget(self.connect_input)
@@ -131,41 +133,44 @@ class MainWindow(QMainWindow):
         self.run_btn.clicked.connect(self.start_task)
         self.run_btn.setStyleSheet("background-color: #007AFF; color: white; font-weight: bold; padding: 5px 15px;")
         
+        self.resume_btn = QPushButton("Resume")
+        self.resume_btn.clicked.connect(self.resume_tasks)
+        self.resume_btn.setEnabled(False)
+        self.resume_btn.setStyleSheet("background-color: #FF9500; color: white; font-weight: bold; padding: 5px 15px;")
+
         self.stop_btn = QPushButton("Stop")
-        self.stop_btn.clicked.connect(self.stop_task)
-        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_tasks)
+        self.stop_btn.setEnabled(True)
         self.stop_btn.setStyleSheet("background-color: #FF3B30; color: white;")
 
         input_layout.addWidget(self.task_input)
         input_layout.addWidget(self.run_btn)
+        input_layout.addWidget(self.resume_btn)
         input_layout.addWidget(self.stop_btn)
         
         # Split View for Chat and Screenshot
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Chat/Log Area
-        self.chat_area = QTextEdit()
-        self.chat_area.setReadOnly(True)
-        self.chat_area.setStyleSheet("""
-            QTextEdit {
-                background-color: #1E1E1E;
-                color: #FFFFFF;
-                font-family: Consolas, Monaco, monospace;
-                font-size: 12px;
-                border: 1px solid #333;
-                border-radius: 5px;
-                padding: 10px;
-            }
-        """)
+        # Chat/Log Area (Tabs)
+        self.log_tabs = QTabWidget()
+        self.log_tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #333; }")
         
-        # Screenshot Preview Area
-        self.preview_label = QLabel("No Screenshot")
-        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setStyleSheet("background-color: #000; border: 1px solid #333;")
-        self.preview_label.setMinimumWidth(300)
+        # System Tab
+        self.system_log = QTextEdit()
+        self.system_log.setReadOnly(True)
+        self.system_log.setStyleSheet(self._get_log_style())
+        self.log_tabs.addTab(self.system_log, "System")
         
-        splitter.addWidget(self.chat_area)
-        splitter.addWidget(self.preview_label)
+        # Sync tab selection
+        self.log_tabs.currentChanged.connect(self._sync_tabs_from_log)
+        
+        # Screenshot Preview Area (Tabs for multiple devices)
+        self.screenshot_tabs = QTabWidget()
+        self.screenshot_tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #333; }")
+        self.screenshot_tabs.currentChanged.connect(self._sync_tabs_from_screenshot)
+        
+        splitter.addWidget(self.log_tabs)
+        splitter.addWidget(self.screenshot_tabs)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 1)
         
@@ -246,6 +251,9 @@ class MainWindow(QMainWindow):
             # Update combo
             self.update_profile_combo()
             self.profile_combo.setCurrentText(name)
+            # Update combo
+            self.update_profile_combo()
+            self.profile_combo.setCurrentText(name)
             self.append_log(f"Profile '{name}' saved.", "#00FF00")
 
     def delete_current_profile(self):
@@ -273,90 +281,267 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to save profiles: {e}")
 
     def refresh_devices(self):
-        self.device_combo.clear()
+        self.device_list.clear()
         try:
             devices = list_devices()
-            for dev in devices:
-                self.device_combo.addItem(f"{dev.device_id} ({dev.status})", dev.device_id)
             if not devices:
-                self.device_combo.addItem("No devices found", None)
+                self.device_list.addItem("No devices found")
+                return
+
+            for dev in devices:
+                # Create checkable item
+                from PyQt6.QtWidgets import QListWidgetItem
+                # Format: [Manufacturer MarketName/Model] DeviceID (Status) - Product
+                
+                # Try to use Market Name (e.g. Xiaomi 13), fallback to Model
+                name_display = dev.market_name if dev.market_name else dev.model
+                
+                # Prepend Manufacturer if not already in name
+                if dev.manufacturer and name_display and dev.manufacturer.lower() not in name_display.lower():
+                    name_display = f"{dev.manufacturer} {name_display}"
+                
+                name_display = name_display or "Unknown"
+
+                info_parts = [f"[{name_display}]", dev.device_id, f"({dev.status})"]
+                if dev.product:
+                    info_parts.append(f"- {dev.product}")
+                if dev.android_version:
+                    info_parts.append(f"[Android {dev.android_version}]")
+                
+                display_text = " ".join(info_parts)
+                item = QListWidgetItem(display_text)
+                item.setData(Qt.ItemDataRole.UserRole, dev.device_id)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.device_list.addItem(item)
+                
+            # Check first device by default if available
+            if self.device_list.count() > 0:
+                self.device_list.item(0).setCheckState(Qt.CheckState.Checked)
+
         except Exception as e:
-            self.device_combo.addItem(f"Error: {e}", None)
+            self.device_list.addItem(f"Error: {e}")
 
-    def append_log(self, text, color="#FFFFFF", style="normal"):
-        """Append styled text to chat area."""
+    def connect_remote_device(self):
+        """Connect to a remote ADB device."""
+        address = self.connect_input.text().strip()
+        if not address:
+            QMessageBox.warning(self, "Warning", "Please enter an IP address (e.g., 192.168.1.5).")
+            return
+            
+        self.append_log(f"Connecting to {address}...", "#00FFFF")
+        self.connect_btn.setEnabled(False)
+        
+        # Use simple blocking call for now, could be threaded if needed
+        success, message = quick_connect(address)
+        
+        self.connect_btn.setEnabled(True)
+        
+        if success:
+            self.append_log(f"✅ Connection successful: {message}", "#00FF00")
+            self.refresh_devices()
+            self.connect_input.clear()
+        else:
+            self.append_log(f"❌ Connection failed: {message}", "#FF3B30")
+            QMessageBox.critical(self, "Connection Failed", f"Could not connect to {address}:\n{message}")
+
+    def _get_log_style(self):
+        return """
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #FFFFFF;
+                font-family: Consolas, Monaco, monospace;
+                font-size: 12px;
+                border: 1px solid #333;
+                border-radius: 5px;
+                padding: 10px;
+            }
+        """
+
+    def append_log(self, text, color="#FFFFFF", style="normal", device_id=None):
+        """Append styled text to chat area (System or Device tab)."""
         html = f'<span style="color:{color}; font-weight:{style}">{text}</span><br>'
-        self.chat_area.insertHtml(html)
-        self.chat_area.verticalScrollBar().setValue(self.chat_area.verticalScrollBar().maximum())
+        
+        # Always log to System for overview
+        self.system_log.insertHtml(html)
+        self.system_log.verticalScrollBar().setValue(self.system_log.verticalScrollBar().maximum())
+        
+        if device_id:
+            # Find or create tab
+            tab_index = -1
+            for i in range(self.log_tabs.count()):
+                if self.log_tabs.tabText(i) == device_id:
+                    tab_index = i
+                    break
+            
+            if tab_index == -1:
+                new_log = QTextEdit()
+                new_log.setReadOnly(True)
+                new_log.setStyleSheet(self._get_log_style())
+                self.log_tabs.addTab(new_log, device_id)
+                tab_index = self.log_tabs.count() - 1
+            
+            # Append to specific tab
+            log_widget = self.log_tabs.widget(tab_index)
+            if isinstance(log_widget, QTextEdit):
+                log_widget.insertHtml(html)
+                log_widget.verticalScrollBar().setValue(log_widget.verticalScrollBar().maximum())
 
-    def update_screenshot(self, base64_data):
+    def _sync_tabs_from_log(self, index):
+        """Sync screenshot tab when log tab changes."""
+        text = self.log_tabs.tabText(index)
+        for i in range(self.screenshot_tabs.count()):
+            if self.screenshot_tabs.tabText(i) == text:
+                self.screenshot_tabs.setCurrentIndex(i)
+                break
+
+    def _sync_tabs_from_screenshot(self, index):
+        """Sync log tab when screenshot tab changes."""
+        text = self.screenshot_tabs.tabText(index)
+        for i in range(self.log_tabs.count()):
+            if self.log_tabs.tabText(i) == text:
+                self.log_tabs.setCurrentIndex(i)
+                break
+
+    def update_screenshot(self, device_id, base64_data):
         try:
             image_data = base64.b64decode(base64_data)
             pixmap = QPixmap()
             pixmap.loadFromData(image_data)
             
-            # Scale to fit while keeping aspect ratio
-            scaled = pixmap.scaled(self.preview_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            self.preview_label.setPixmap(scaled)
+            # Find or create tab for this device
+            tab_index = -1
+            for i in range(self.screenshot_tabs.count()):
+                if self.screenshot_tabs.tabText(i) == device_id:
+                    tab_index = i
+                    break
+            
+            if tab_index == -1:
+                # Create new tab
+                label = QLabel()
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                label.setStyleSheet("background-color: #000;")
+                self.screenshot_tabs.addTab(label, device_id)
+                tab_index = self.screenshot_tabs.count() - 1
+                # Switch to new tab if it's the only active one
+                if self.screenshot_tabs.count() == 1:
+                     self.screenshot_tabs.setCurrentIndex(tab_index)
+
+            # Get label from widget
+            label = self.screenshot_tabs.widget(tab_index)
+            if isinstance(label, QLabel):
+                # Scale to fit tab size
+                scaled = pixmap.scaled(label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                label.setPixmap(scaled)
+                
         except Exception as e:
-            print(f"Failed to update screenshot: {e}")
+            print(f"Failed to update screenshot for {device_id}: {e}")
+
+    def get_selected_device_ids(self):
+        """Get list of checked device IDs."""
+        ids = []
+        for i in range(self.device_list.count()):
+            item = self.device_list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                device_id = item.data(Qt.ItemDataRole.UserRole)
+                if device_id:
+                    ids.append(device_id)
+        return ids
 
     def start_task(self):
         task = self.task_input.text().strip()
         if not task:
+            QMessageBox.warning(self, "Warning", "Please enter a task description.")
             return
             
-        device_id = self.device_combo.currentData()
-        if not device_id:
-            self.append_log("Error: No device selected.", "#FF3B30")
+        device_ids = self.get_selected_device_ids()
+        if not device_ids:
+            QMessageBox.warning(self, "Warning", "Please select at least one device.")
             return
-
-        # Prepare Configs
+            
+        # Common config
         model_config = {
             "base_url": self.base_url_input.text(),
             "model_name": self.model_name_input.text(),
-            "api_key": self.api_key_input.text(),
-            "lang": "cn" # Default to Chinese for now
+            "api_key": self.api_key_input.text()
         }
         
-        agent_config = {
-            "max_steps": 50,
-            "device_id": device_id,
-            "verbose": True
-        }
-        
-        # UI Updates
-        self.task_input.clear()
-        self.run_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.append_log(f"ME: {task}", "#007AFF", "bold")
-        
-        # Start Worker
-        self.worker = AgentWorker(model_config, agent_config, task)
-        self.worker.signal_thinking.connect(lambda t: self.append_log(f"THINKING: {t}", "#808080", "italic"))
-        self.worker.signal_action.connect(self.handle_action)
-        self.worker.signal_error.connect(lambda e: self.append_log(f"ERROR: {e}", "#FF3B30"))
-        self.worker.signal_finished.connect(self.handle_finished)
-        self.worker.signal_log.connect(lambda t: self.append_log(f"SYS: {t}", "#AAAAAA"))
-        
-        self.worker.start()
+        for device_id in device_ids:
+            self.append_log(f"Preparing task for {device_id}...", "#AAAAAA")
+            if device_id in self.workers and self.workers[device_id].isRunning():
+                self.append_log(f"Busy, skipping new task.", "#FFA500", device_id=device_id)
+                continue
+                
+            agent_config = {
+                "device_id": device_id,
+                "verbose": True
+            }
+            
+            worker = AgentWorker(device_id, model_config, agent_config, task)
+            worker.signal_thinking.connect(self.handle_thinking)
+            worker.signal_action.connect(self.handle_action)
+            worker.signal_error.connect(self.handle_error)
+            worker.signal_finished.connect(self.handle_finished)
+            worker.signal_log.connect(self.handle_log)
+            worker.signal_takeover_request.connect(self.handle_takeover_request)
+            
+            self.workers[device_id] = worker
+            worker.start()
+            self.append_log(f"Starting task...", "#00FFFF", device_id=device_id)
+            self.append_log(f"ME: {task}", "#007AFF", "bold", device_id=device_id)
 
-    def handle_action(self, action, screenshot_b64):
-        self.append_log(f"ACTION: {action}", "#32CD32")
+    def stop_tasks(self):
+        """Stop tasks for checked devices."""
+        device_ids = self.get_selected_device_ids()
+        for device_id in device_ids:
+            if device_id in self.workers:
+                self.workers[device_id].stop()
+                self.append_log(f"Stopping...", "#FF3B30", device_id=device_id)
+        self.resume_btn.setEnabled(False)
+
+    def resume_tasks(self):
+        """Resume paused tasks for checked devices."""
+        device_ids = self.get_selected_device_ids()
+        resumed_count = 0
+        for device_id in device_ids:
+            if device_id in self.workers:
+                if self.workers[device_id].is_paused:
+                     self.workers[device_id].resume()
+                     self.append_log(f"Resuming...", "#00FF00", device_id=device_id)
+                     resumed_count += 1
+        
+        if resumed_count > 0:
+            self.resume_btn.setEnabled(False)
+            self.run_btn.setEnabled(False)
+
+    def handle_thinking(self, device_id, content):
+        self.append_log(f"🤔 Thinking: {content}", "#AAAAAA", "italic", device_id=device_id)
+
+    def handle_action(self, device_id, action, screenshot_b64):
+        self.append_log(f"⚡ Action: {action}", "#00AAFF", device_id=device_id)
+        # Update screenshot for specific device tab
         if screenshot_b64:
-            self.update_screenshot(screenshot_b64)
+            self.update_screenshot(device_id, screenshot_b64)
 
-    def handle_finished(self, result):
-        self.append_log(f"FINISHED: {result}", "#FFD700", "bold")
-        self.run_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.worker = None
+    def handle_error(self, device_id, error):
+        self.append_log(f"❌ Error: {error}", "#FF3B30", device_id=device_id)
+        self._cleanup_worker(device_id)
 
-    def stop_task(self):
-        if self.worker:
-            self.worker.stop()
-            self.append_log("Task stopped by user.", "#FF3B30")
-            self.run_btn.setEnabled(True)
-            self.stop_btn.setEnabled(False)
-            self.worker = None
+    def handle_finished(self, device_id, result):
+        self.append_log(f"✅ Finished: {result}", "#00FF00", device_id=device_id)
+        self._cleanup_worker(device_id)
+        
+    def handle_log(self, device_id, message):
+         self.append_log(f"ℹ️ {message}", "#DDDDDD", device_id=device_id)
+
+    def handle_takeover_request(self, device_id, message):
+        self.append_log(f"⚠️ MANUAL TAKEOVER: {message}", "#FF9500", "bold", device_id=device_id)
+        self.resume_btn.setEnabled(True)
+        # Optional: could show a pop-up dialog too
+        # QMessageBox.information(self, "Manual Intervention Required", f"Device {device_id} needs help:\n{message}")
+
+    def _cleanup_worker(self, device_id):
+        if device_id in self.workers:
+            del self.workers[device_id]
+
 

@@ -36,7 +36,7 @@ DEFAULT_PROFILES = {
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Open-AutoGLM Desktop Client")
+        self.setWindowTitle("Open-AutoGLM 桌面客户端")
         self.resize(1200, 800)
         
         # Data
@@ -60,30 +60,30 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(0, 0, 0, 0)
         
         # Device Group
-        dev_group = QGroupBox("Device Connection")
+        dev_group = QGroupBox("设备连接")
         dev_layout = QVBoxLayout(dev_group)
         
         self.device_list = QListWidget()
         self.device_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.device_list.setFixedHeight(150)
         
-        self.refresh_btn = QPushButton("Refresh Devices")
+        self.refresh_btn = QPushButton("刷新设备列表")
         self.refresh_btn.clicked.connect(self.refresh_devices)
         
         self.connect_input = QLineEdit()
-        self.connect_input.setPlaceholderText("Remote IP:Port (e.g., 192.168.1.5:5555)")
-        self.connect_btn = QPushButton("Connect Remote")
+        self.connect_input.setPlaceholderText("远程 IP:Port (例如 192.168.1.5:5555)")
+        self.connect_btn = QPushButton("连接远程")
         self.connect_btn.clicked.connect(self.connect_remote_device)
         
-        dev_layout.addWidget(QLabel("Select Devices (Check to control):"))
+        dev_layout.addWidget(QLabel("选择设备 (勾选以控制):"))
         dev_layout.addWidget(self.device_list)
         dev_layout.addWidget(self.refresh_btn)
-        dev_layout.addWidget(QLabel("Remote Connection:"))
+        dev_layout.addWidget(QLabel("远程连接:"))
         dev_layout.addWidget(self.connect_input)
         dev_layout.addWidget(self.connect_btn)
         
         # Model Config Group
-        model_group = QGroupBox("Model Configuration")
+        model_group = QGroupBox("模型配置")
         model_layout = QVBoxLayout(model_group)
         
         # Profile Selection
@@ -92,12 +92,12 @@ class MainWindow(QMainWindow):
         self.profile_combo.setEditable(True)
         self.profile_combo.currentIndexChanged.connect(self.apply_profile)
         
-        self.save_profile_btn = QPushButton("Save")
+        self.save_profile_btn = QPushButton("保存")
         self.save_profile_btn.clicked.connect(self.save_current_profile)
-        self.del_profile_btn = QPushButton("Del")
+        self.del_profile_btn = QPushButton("删除")
         self.del_profile_btn.clicked.connect(self.delete_current_profile)
         
-        profile_layout.addWidget(QLabel("Profile:"))
+        profile_layout.addWidget(QLabel("配置预设:"))
         profile_layout.addWidget(self.profile_combo, 1)
         profile_layout.addWidget(self.save_profile_btn)
         profile_layout.addWidget(self.del_profile_btn)
@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         model_layout.addLayout(profile_layout)
         model_layout.addWidget(QLabel("Base URL:"))
         model_layout.addWidget(self.base_url_input)
-        model_layout.addWidget(QLabel("Model Name:"))
+        model_layout.addWidget(QLabel("模型名称:"))
         model_layout.addWidget(self.model_name_input)
         model_layout.addWidget(QLabel("API Key:"))
         model_layout.addWidget(self.api_key_input)
@@ -126,22 +126,22 @@ class MainWindow(QMainWindow):
         # Task Input Area
         input_layout = QHBoxLayout()
         self.task_input = QLineEdit()
-        self.task_input.setPlaceholderText("Enter your task here (e.g., 'Open WhatsApp and send message')...")
+        self.task_input.setPlaceholderText("在此输入任务 (例如 '打开微信发送消息')...")
         self.task_input.returnPressed.connect(self.start_task)
         
-        self.run_btn = QPushButton("Run Task")
+        self.run_btn = QPushButton("开始任务")
+        self.run_btn.setObjectName("runBtn")
         self.run_btn.clicked.connect(self.start_task)
-        self.run_btn.setStyleSheet("background-color: #007AFF; color: white; font-weight: bold; padding: 5px 15px;")
         
-        self.resume_btn = QPushButton("Resume")
+        self.resume_btn = QPushButton("继续")
+        self.resume_btn.setObjectName("resumeBtn")
         self.resume_btn.clicked.connect(self.resume_tasks)
         self.resume_btn.setEnabled(False)
-        self.resume_btn.setStyleSheet("background-color: #FF9500; color: white; font-weight: bold; padding: 5px 15px;")
 
-        self.stop_btn = QPushButton("Stop")
+        self.stop_btn = QPushButton("停止")
+        self.stop_btn.setObjectName("stopBtn")
         self.stop_btn.clicked.connect(self.stop_tasks)
         self.stop_btn.setEnabled(True)
-        self.stop_btn.setStyleSheet("background-color: #FF3B30; color: white;")
 
         input_layout.addWidget(self.task_input)
         input_layout.addWidget(self.run_btn)
@@ -153,21 +153,24 @@ class MainWindow(QMainWindow):
         
         # Chat/Log Area (Tabs)
         self.log_tabs = QTabWidget()
-        self.log_tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #333; }")
         
         # System Tab
         self.system_log = QTextEdit()
         self.system_log.setReadOnly(True)
-        self.system_log.setStyleSheet(self._get_log_style())
-        self.log_tabs.addTab(self.system_log, "System")
+        self.log_tabs.addTab(self.system_log, "系统日志")
         
         # Sync tab selection
         self.log_tabs.currentChanged.connect(self._sync_tabs_from_log)
         
         # Screenshot Preview Area (Tabs for multiple devices)
         self.screenshot_tabs = QTabWidget()
-        self.screenshot_tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #333; }")
         self.screenshot_tabs.currentChanged.connect(self._sync_tabs_from_screenshot)
+        
+        # Default placeholder tab to align height with Log tabs
+        self.placeholder_label = QLabel("等待任务开始...\n\n选择设备并点击 '开始任务'\n以查看实时画面")
+        self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder_label.setStyleSheet("color: #636366; font-size: 14px; font-weight: bold;")
+        self.screenshot_tabs.addTab(self.placeholder_label, "屏幕画面")
         
         splitter.addWidget(self.log_tabs)
         splitter.addWidget(self.screenshot_tabs)
@@ -236,7 +239,7 @@ class MainWindow(QMainWindow):
         if ok and name:
             name = name.strip()
             if not name:
-                QMessageBox.warning(self, "Warning", "Profile name cannot be empty.")
+                QMessageBox.warning(self, "警告", "配置名称不能为空")
                 return
 
             profile = {
@@ -251,10 +254,7 @@ class MainWindow(QMainWindow):
             # Update combo
             self.update_profile_combo()
             self.profile_combo.setCurrentText(name)
-            # Update combo
-            self.update_profile_combo()
-            self.profile_combo.setCurrentText(name)
-            self.append_log(f"Profile '{name}' saved.", "#00FF00")
+            self.append_log(f"配置 '{name}' 已保存.", "#00FF00")
 
     def delete_current_profile(self):
         """Delete currently selected profile."""
@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
         if not profile_name or profile_name not in self.profiles:
             return
 
-        confirm = QMessageBox.question(self, "Confirm Delete", f"Delete profile '{profile_name}'?", 
+        confirm = QMessageBox.question(self, "确认删除", f"确定要删除配置 '{profile_name}' 吗?", 
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if confirm == QMessageBox.StandardButton.Yes:
@@ -285,7 +285,7 @@ class MainWindow(QMainWindow):
         try:
             devices = list_devices()
             if not devices:
-                self.device_list.addItem("No devices found")
+                self.device_list.addItem("未发现设备")
                 return
 
             for dev in devices:
@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
                 if dev.manufacturer and name_display and dev.manufacturer.lower() not in name_display.lower():
                     name_display = f"{dev.manufacturer} {name_display}"
                 
-                name_display = name_display or "Unknown"
+                name_display = name_display or "未知设备"
 
                 info_parts = [f"[{name_display}]", dev.device_id, f"({dev.status})"]
                 if dev.product:
@@ -326,10 +326,10 @@ class MainWindow(QMainWindow):
         """Connect to a remote ADB device."""
         address = self.connect_input.text().strip()
         if not address:
-            QMessageBox.warning(self, "Warning", "Please enter an IP address (e.g., 192.168.1.5).")
+            QMessageBox.warning(self, "警告", "请输入 IP 地址 (例如 192.168.1.5)")
             return
             
-        self.append_log(f"Connecting to {address}...", "#00FFFF")
+        self.append_log(f"正在连接到 {address}...", "#00FFFF")
         self.connect_btn.setEnabled(False)
         
         # Use simple blocking call for now, could be threaded if needed
@@ -338,25 +338,16 @@ class MainWindow(QMainWindow):
         self.connect_btn.setEnabled(True)
         
         if success:
-            self.append_log(f"✅ Connection successful: {message}", "#00FF00")
+            self.append_log(f"✅ 连接成功: {message}", "#00FF00")
             self.refresh_devices()
             self.connect_input.clear()
         else:
-            self.append_log(f"❌ Connection failed: {message}", "#FF3B30")
-            QMessageBox.critical(self, "Connection Failed", f"Could not connect to {address}:\n{message}")
+            self.append_log(f"❌ 连接失败: {message}", "#FF3B30")
+            QMessageBox.critical(self, "连接失败", f"无法连接到 {address}:\n{message}")
 
     def _get_log_style(self):
-        return """
-            QTextEdit {
-                background-color: #1E1E1E;
-                color: #FFFFFF;
-                font-family: Consolas, Monaco, monospace;
-                font-size: 12px;
-                border: 1px solid #333;
-                border-radius: 5px;
-                padding: 10px;
-            }
-        """
+        # Deprecated: Style is now handled by gui/theme.py
+        return ""
 
     def append_log(self, text, color="#FFFFFF", style="normal", device_id=None):
         """Append styled text to chat area (System or Device tab)."""
@@ -377,7 +368,6 @@ class MainWindow(QMainWindow):
             if tab_index == -1:
                 new_log = QTextEdit()
                 new_log.setReadOnly(True)
-                new_log.setStyleSheet(self._get_log_style())
                 self.log_tabs.addTab(new_log, device_id)
                 tab_index = self.log_tabs.count() - 1
             
@@ -417,15 +407,18 @@ class MainWindow(QMainWindow):
                     break
             
             if tab_index == -1:
+                # Check for placeholder and remove it
+                if self.screenshot_tabs.count() > 0 and self.screenshot_tabs.tabText(0) == "Screen":
+                    self.screenshot_tabs.removeTab(0)
+
                 # Create new tab
                 label = QLabel()
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                label.setStyleSheet("background-color: #000;")
                 self.screenshot_tabs.addTab(label, device_id)
                 tab_index = self.screenshot_tabs.count() - 1
-                # Switch to new tab if it's the only active one
-                if self.screenshot_tabs.count() == 1:
-                     self.screenshot_tabs.setCurrentIndex(tab_index)
+                
+                # Auto-switch to new tab
+                self.screenshot_tabs.setCurrentIndex(tab_index)
 
             # Get label from widget
             label = self.screenshot_tabs.widget(tab_index)
@@ -450,13 +443,15 @@ class MainWindow(QMainWindow):
 
     def start_task(self):
         task = self.task_input.text().strip()
+    def start_task(self):
+        task = self.task_input.text().strip()
         if not task:
-            QMessageBox.warning(self, "Warning", "Please enter a task description.")
+            QMessageBox.warning(self, "警告", "请输入任务描述")
             return
             
         device_ids = self.get_selected_device_ids()
         if not device_ids:
-            QMessageBox.warning(self, "Warning", "Please select at least one device.")
+            QMessageBox.warning(self, "警告", "请至少选择一个设备")
             return
             
         # Common config
@@ -467,9 +462,9 @@ class MainWindow(QMainWindow):
         }
         
         for device_id in device_ids:
-            self.append_log(f"Preparing task for {device_id}...", "#AAAAAA")
+            self.append_log(f"正在准备设备 {device_id}...", "#AAAAAA")
             if device_id in self.workers and self.workers[device_id].isRunning():
-                self.append_log(f"Busy, skipping new task.", "#FFA500", device_id=device_id)
+                self.append_log(f"设备忙, 跳过新任务.", "#FFA500", device_id=device_id)
                 continue
                 
             agent_config = {
@@ -487,8 +482,8 @@ class MainWindow(QMainWindow):
             
             self.workers[device_id] = worker
             worker.start()
-            self.append_log(f"Starting task...", "#00FFFF", device_id=device_id)
-            self.append_log(f"ME: {task}", "#007AFF", "bold", device_id=device_id)
+            self.append_log(f"任务启动中...", "#00FFFF", device_id=device_id)
+            self.append_log(f"任务: {task}", "#007AFF", "bold", device_id=device_id)
 
     def stop_tasks(self):
         """Stop tasks for checked devices."""
@@ -496,7 +491,7 @@ class MainWindow(QMainWindow):
         for device_id in device_ids:
             if device_id in self.workers:
                 self.workers[device_id].stop()
-                self.append_log(f"Stopping...", "#FF3B30", device_id=device_id)
+                self.append_log(f"正在停止...", "#FF3B30", device_id=device_id)
         self.resume_btn.setEnabled(False)
 
     def resume_tasks(self):
@@ -507,7 +502,7 @@ class MainWindow(QMainWindow):
             if device_id in self.workers:
                 if self.workers[device_id].is_paused:
                      self.workers[device_id].resume()
-                     self.append_log(f"Resuming...", "#00FF00", device_id=device_id)
+                     self.append_log(f"正在继续...", "#00FF00", device_id=device_id)
                      resumed_count += 1
         
         if resumed_count > 0:
@@ -515,27 +510,27 @@ class MainWindow(QMainWindow):
             self.run_btn.setEnabled(False)
 
     def handle_thinking(self, device_id, content):
-        self.append_log(f"🤔 Thinking: {content}", "#AAAAAA", "italic", device_id=device_id)
+        self.append_log(f"🤔 思考中: {content}", "#AAAAAA", "italic", device_id=device_id)
 
     def handle_action(self, device_id, action, screenshot_b64):
-        self.append_log(f"⚡ Action: {action}", "#00AAFF", device_id=device_id)
+        self.append_log(f"⚡ 执行动作: {action}", "#00AAFF", device_id=device_id)
         # Update screenshot for specific device tab
         if screenshot_b64:
             self.update_screenshot(device_id, screenshot_b64)
 
     def handle_error(self, device_id, error):
-        self.append_log(f"❌ Error: {error}", "#FF3B30", device_id=device_id)
+        self.append_log(f"❌ 错误: {error}", "#FF3B30", device_id=device_id)
         self._cleanup_worker(device_id)
 
     def handle_finished(self, device_id, result):
-        self.append_log(f"✅ Finished: {result}", "#00FF00", device_id=device_id)
+        self.append_log(f"✅ 完成: {result}", "#00FF00", device_id=device_id)
         self._cleanup_worker(device_id)
         
     def handle_log(self, device_id, message):
          self.append_log(f"ℹ️ {message}", "#DDDDDD", device_id=device_id)
 
     def handle_takeover_request(self, device_id, message):
-        self.append_log(f"⚠️ MANUAL TAKEOVER: {message}", "#FF9500", "bold", device_id=device_id)
+        self.append_log(f"⚠️ 收到人工接管请求: {message}", "#FF9500", "bold", device_id=device_id)
         self.resume_btn.setEnabled(True)
         # Optional: could show a pop-up dialog too
         # QMessageBox.information(self, "Manual Intervention Required", f"Device {device_id} needs help:\n{message}")
